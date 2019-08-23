@@ -7,7 +7,6 @@
 const blake = require("blakejs");
 const nacl = require("tweetnacl");
 const base64url = require("base64-url");
-const fetch = require("node-fetch");
 
 /**
  * Convert binary to hex.
@@ -134,22 +133,22 @@ var pullAndCheckHashs = function(sigs) {
  * @param meta {object} - meta information, see mkMeta
  * @return valid pact API command for send or local use.
  */
-var prepareExecCmd = function(keyPairs, nonce=new Date().toISOString(), pactCode, envData, meta=mkMeta("","",0,0)) {
+var prepareExecCmd = function(keyPairs, nonce=new Date().toISOString(), pactCode, envData, meta=mkMeta("","",0,0,0,28800)) {
   enforceType(nonce, "string", "nonce");
   enforceType(pactCode, "string", "pactCode");
 
   var kpArray = asArray(keyPairs);
   var signers = kpArray.map(mkSigner);
   var cmdJSON = {
+    nonce: nonce,
     payload: {
       exec: {
-        data: envData || {},
-        code: pactCode
+        code: pactCode,
+        data: envData || {}
       }
     },
     signers: signers,
-    meta: meta,
-    nonce: JSON.stringify(nonce)
+    meta: meta
   };
   var cmd = JSON.stringify(cmdJSON);
   var sigs = kpArray.map(function(kp) {
@@ -189,9 +188,9 @@ var mkPublicSend = function(cmds) {
  */
 var mkSigner = function(kp) {
   return {
+    pubKey: kp.publicKey,
     addr: kp.publicKey,
-    scheme: "ED25519",
-    pubKey: kp.publicKey
+    scheme: "ED25519"
   };
 };
 
@@ -318,18 +317,24 @@ var mkExp = function(pgmName) {
  * @param chainId {string} chain identifier
  * @param gasPrice {number} desired gas price
  * @param gasLimit {number} desired gas limit
+ * @param creationTime {number} creation time.
+ * @param ttl {number} desired tx's time to live
  * @return {object} of arguments, type-checked and properly named.
  */
-var mkMeta = function(sender, chainId, gasPrice, gasLimit) {
+var mkMeta = function(sender, chainId, gasPrice, gasLimit, creationTime, ttl) {
   enforceType(sender, "string", "sender");
   enforceType(chainId, "string", "chainId");
   enforceType(gasPrice, "number", "gasPrice");
   enforceType(gasPrice, "number", "gasLimit");
+  enforceType(gasPrice, "number", "creationTime");
+  enforceType(gasPrice, "number", "ttl");
   return {
     gasLimit: gasLimit,
     chainId: chainId,
     gasPrice: gasPrice,
-    sender: sender
+    sender: sender,
+    creationTime: creationTime,
+    ttl: ttl
   };
 };
 
@@ -413,6 +418,40 @@ const fetchListen = async function(listenCmd, apiHost) {
   return resJSON.result;
 };
 
+/**
+ * Sends Pact command parameters to local wallet and retrieve the signedCommand.
+ * @param pactCode {string} - pact code to execute
+ * @param envData {object} - JSON message data for command
+ * @return {object} Signed Pact Command
+ */
+
+const signWallet = async function (pactCode, envData){
+  //Add other fields.
+  if (!pactCode)  throw new Error(`Pact.wallet.sign(): No Pact Code provided`);
+  const cmd = {
+    code: pactCode,
+    data: envData || {}
+  }
+  const res = await fetch('http://127.0.0.1:9467/v1/sign', mkReq(cmd))
+  const resJSON = await res.json();
+  return resJSON.body;
+}
+
+/**
+ * Sends a signed Pact command to a running Pact server and retrieves tx result.
+ * @param {{signedCmd: <rk:string>}} listenCmd reqest key of tx to listen.
+ * @param {string} apiHost host running Pact server
+ * @return {object} Request key of the tx received from pact server.
+ */
+const sendSigned = async function (signedCmd, apiHost) {
+  const cmd = {
+    "cmds": [ signedCmd ]
+  }
+  const txRes = await fetch(`${apiHost}/api/v1/send`, mkReq(cmd));
+  const tx = await txRes.json();
+  return tx;
+}
+
 module.exports = {
   crypto: {
     binToHex: binToHex,
@@ -445,5 +484,9 @@ module.exports = {
     local: fetchLocal,
     poll: fetchPoll,
     listen: fetchListen
+  },
+  wallet: {
+    sign: signWallet,
+    sendSigned: sendSigned
   }
 };
