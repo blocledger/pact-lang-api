@@ -422,10 +422,10 @@ const fetchListen = async function(listenCmd, apiHost) {
  * Sends Pact command parameters to local wallet and retrieve the signedCommand.
  * @param pactCode {string} - pact code to execute
  * @param envData {object} - JSON message data for command
- * @param sender {object} - sender field in meta
- * @param chainId {object} - chain Id field in meta
- * @param gasLimit {object} - gas Limit field in meta
- * @param nonce {object} - nonce field in the command
+ * @param sender {string} - sender field in meta
+ * @param chainId {string} - chain Id field in meta
+ * @param gasLimit {number} - gas Limit field in meta
+ * @param nonce {string} - nonce value for ensuring unique hash
  * @return {object} Signed Pact Command
  */
 
