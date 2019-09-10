@@ -422,15 +422,22 @@ const fetchListen = async function(listenCmd, apiHost) {
  * Sends Pact command parameters to local wallet and retrieve the signedCommand.
  * @param pactCode {string} - pact code to execute
  * @param envData {object} - JSON message data for command
+ * @param sender {object} - sender field in meta
+ * @param chainId {object} - chain Id field in meta
+ * @param gasLimit {object} - gas Limit field in meta
+ * @param nonce {object} - nonce field in the command
  * @return {object} Signed Pact Command
  */
 
-const signWallet = async function (pactCode, envData){
-  //Add other fields.
+const signWallet = async function (pactCode, envData, sender, chainId, gasLimit, nonce){
   if (!pactCode)  throw new Error(`Pact.wallet.sign(): No Pact Code provided`);
   const cmd = {
     code: pactCode,
-    data: envData || {}
+    data: envData,
+    sender: sender,
+    chainId: chainId,
+    gasLimit: gasLimit,
+    nonce: nonce
   }
   const res = await fetch('http://127.0.0.1:9467/v1/sign', mkReq(cmd))
   const resJSON = await res.json();
