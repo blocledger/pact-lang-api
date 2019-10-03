@@ -133,7 +133,7 @@ var pullAndCheckHashs = function(sigs) {
  * @param meta {object} - meta information, see mkMeta
  * @return valid pact API command for send or local use.
  */
-var prepareExecCmd = function(keyPairs, nonce=new Date().toISOString(), pactCode, envData, meta=mkMeta("","",0,0,0,28800)) {
+var prepareExecCmd = function(keyPairs, nonce=new Date().toISOString(), pactCode, envData, meta=mkMeta("","",0,0,0,28800), networkId=null) {
   enforceType(nonce, "string", "nonce");
   enforceType(pactCode, "string", "pactCode");
 
@@ -147,8 +147,49 @@ var prepareExecCmd = function(keyPairs, nonce=new Date().toISOString(), pactCode
         data: envData || {}
       }
     },
+    //Need to take this from exec
+    networkId: networkId,
     signers: signers,
     meta: meta
+  };
+  var cmd = JSON.stringify(cmdJSON);
+  var sigs = kpArray.map(function(kp) {
+    return sign(cmd, kp);
+  });
+  return mkSingleCmd(sigs, cmd);
+};
+
+/**
+ * Prepare an ContMsg pact command for use in send or local execution.
+ * To use in send, wrap result with 'mkSingleCommand'.
+ * @param keyPairs {array or object} - array or single ED25519 keypair
+ * @param nonce {string} - nonce value for ensuring unique hash
+ * @param pactCode {string} - pact code to execute
+ * @param envData {object} - JSON message data for command
+ * @param meta {object} - public meta information, see mkMeta
+ * @return valid pact API command for send or local use.
+ */
+var prepareContCmd = function(keyPairs, nonce=new Date().toISOString(), proof, pactId, rollback, step, envData, meta=mkMeta("","",0,0,0,0)) {
+  enforceType(nonce, "string", "nonce");
+  //enforceType(pactCode, "string", "pactCode");
+
+  var kpArray = asArray(keyPairs);
+  var signers = kpArray.map(mkSigner);
+  var cmdJSON = {
+    payload: {
+      cont: {
+        proof: proof || null,
+        pactId: pactId,
+        rollback: rollback,
+        step: step,
+        data: envData || {},
+      }
+    },
+    //need to update this to take in from exec
+    networkId: networkId,
+    signers: signers,
+    meta: meta,
+    nonce: JSON.stringify(nonce)
   };
   var cmd = JSON.stringify(cmdJSON);
   var sigs = kpArray.map(function(kp) {
@@ -188,9 +229,7 @@ var mkPublicSend = function(cmds) {
  */
 var mkSigner = function(kp) {
   return {
-    pubKey: kp.publicKey,
-    addr: kp.publicKey,
-    scheme: "ED25519"
+    pubKey: kp.publicKey
   };
 };
 
@@ -359,6 +398,7 @@ var mkReq = function(cmd) {
  * @property nonce {string} nonce value, default at current time
  * @property envData {object} JSON message data for command, default at empty obj
  * @property meta {object} meta information, see mkMeta
+ * @property networkId {string} network information
  */
 
 /**
@@ -369,11 +409,28 @@ var mkReq = function(cmd) {
  */
 const fetchSend = async function(sendCmd, apiHost){
   if (!apiHost)  throw new Error(`Pact.fetch.send(): No apiHost provided`);
-  const sendCmds = asArray(sendCmd).map(cmd => prepareExecCmd(cmd.keyPairs, cmd.nonce, cmd.pactCode, cmd.envData, cmd.meta));
+  const sendCmds = asArray(sendCmd).map(cmd => prepareExecCmd(cmd.keyPairs, cmd.nonce, cmd.pactCode, cmd.envData, cmd.meta, cmd.networkId));
   const txRes = await fetch(`${apiHost}/api/v1/send`, mkReq(mkPublicSend(sendCmds)));
   const tx = await txRes.json();
   return tx;
 };
+
+const fetchSendCont = async function(contCmd, apiHost){
+  if (!apiHost)  throw new Error(`Pact.fetch.send(): No apiHost provided`);
+  const sendConts = asArray(contCmd).map(cont => prepareContCmd(cont.keyPairs, cont.nonce, cont.proof, cont.pactId, cont.rollback, cont.step, cont.envData, cont.meta, cont.networkId))
+  const txRes = await fetch(`${apiHost}/api/v1/send`, mkReq(mkPublicSend(sendConts)));
+  const tx = await txRes.json();
+  return tx;
+};
+
+const fetchSPV = async function(reqKey, chainId, apiHost){
+  if (!apiHost)  throw new Error(`Pact.fetch.send(): No apiHost provided`);
+  const cmd = {"requestKey": reqKey, "targetChainId": chainId}
+  const txRes = await fetch(`${apiHost}/spv`, mkReq(cmd));
+  const tx = await txRes.json();
+  return tx;
+};
+
 
 /**
  * Sends Local Pact command to a local Pact server and retrieves local tx result.
@@ -383,8 +440,8 @@ const fetchSend = async function(sendCmd, apiHost){
  */
 const fetchLocal = async function(localCmd, apiHost) {
   if (!apiHost)  throw new Error(`Pact.fetch.local(): No apiHost provided`);
-  const {keyPairs, nonce, pactCode, envData, meta} = localCmd
-  const cmd = prepareExecCmd(keyPairs, nonce, pactCode, envData, meta);
+  const {keyPairs, nonce, pactCode, envData, meta, networkId} = localCmd
+  const cmd = prepareExecCmd(keyPairs, nonce, pactCode, envData, meta, networkId);
   const txRes = await fetch(`${apiHost}/api/v1/local`, mkReq(cmd));
   const tx = await txRes.json();
   return tx.result;
@@ -471,6 +528,7 @@ module.exports = {
   },
   api: {
     prepareExecCmd: prepareExecCmd,
+    prepareContCmd: prepareContCmd,
     mkSingleCmd: mkSingleCmd,
     mkPublicSend: mkPublicSend
   },
@@ -481,6 +539,7 @@ module.exports = {
   simple: {
     exec: {
       createCommand: simpleExecCommand,
+      createContCommand: simpleContCommand,
       createLocalCommand: prepareExecCmd,
       createPollRequest: simplePollRequestFromExec,
       createListenRequest: simpleListenRequestFromExec
@@ -488,6 +547,8 @@ module.exports = {
   },
   fetch: {
     send: fetchSend,
+    cont: fetchSendCont,
+    spv: fetchSPV,
     local: fetchLocal,
     poll: fetchPoll,
     listen: fetchListen
@@ -495,5 +556,6 @@ module.exports = {
   wallet: {
     sign: signWallet,
     sendSigned: sendSigned
-  }
+  },
+
 };
