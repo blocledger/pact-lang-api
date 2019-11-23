@@ -404,7 +404,7 @@ const fetchPoll = async function(pollCmd, apiHost) {
   const res = await fetch(`${apiHost}/api/v1/poll`, mkReq(pollCmd));
   const resJSON = await res.json();
   return Object.values(resJSON).map(res => {
-    return { reqKey: res.reqKey, result: res.result };
+    return { reqKey: res.reqKey, result: res.result, txId: res.txId };  // txId added for Rymedi
   });
 };
 
